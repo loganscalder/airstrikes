@@ -263,8 +263,11 @@ ggplot(understrikes, mapping=aes(x=report_date, y=strikes)) +
     geom_bar(mapping=aes(fill=country), stat = "identity")
 ```
 
-This is why I'd like to look at the cummulative number of strikes in 
-each country over time.
+It's a fuzzy graph. But still, look at the drop in number of strikes at the end 
+of the time line. That seems pretty significant-- a drop from great heights, and
+it's a drop that has lasted for longer than other low points.
+
+To see something smoother, look at the graph of cummulative number of strikes:
 ```{r}
 understrikes <- 
     understrikes %>%
