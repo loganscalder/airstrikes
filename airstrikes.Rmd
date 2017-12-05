@@ -1,0 +1,288 @@
+---
+title: "Airstrikes"
+author: "Logan Calder"
+date: "November 15, 2017"
+output: pdf_document
+---
+
+```{r echo =F}
+load(file = "graphs/cum_strikes.rData")
+plot_to_save
+```
+
+
+# Project Description 
+<!-- regular html comment --> 
+### Motivation
+I wanted to monitor US airstrikes agains ISIS in Syia. Several years ago,
+the Department of Defense started a coalition against ISIS. The website for
+the coalition is http://www.inherentresolve.mil/
+
+### Data
+The coalition publishes
+a report on some of their activity nearly every day. These reports contain
+information about the number of airstrikes in Syia and Iraq each day. They can be found in pdf format at
+http://www.inherentresolve.mil/News/Strike-Releases/
+
+### Process
+I scraped pdf airstrike reports from the website http://www.inherentresolve.mil/News/Strike-Releases/ . The text from these reports was then mined for
+the number of airstrikes in each country. I aproximate the dates for these
+airstrikes by looking at the dates the reports were created. I don't bother
+with a few reports that don't fit the usuall pattern; therefore I only offer
+an underestimate of the number of strikes. 
+
+### Result
+A graph of cumulative airstrikes over time (shown above).
+
+```{r packages, include = F, echo = F}
+# packages
+library(pdftools)
+library(tidytext)
+library(stringr)
+library(tidyverse)
+```
+
+```{r directories, include = F, echo = T}
+
+proj_dir <- "/Users/loganscalder/Desktop/Research/airstrikes" 
+data_dir <- paste0(proj_dir, "/data") 
+```
+
+
+# Data 
+
+Data reports were found by scraping http://www.inherentresolve.mil/News/Strike-Releases/
+
+```{r scrape}
+        # library(XML)
+        # doc.html<- htmlParse("http://www.inherentresolve.mil/News/Strike-Releases/")
+        # doc.links <- xpathSApply(doc.html, "//a/@href")
+        # pdf.url <- paste0("http://www.inherentresolve.mil/",
+        #                   as.character(doc.links[grep('pdf',doc.links)]))
+```
+
+Once found, I downloaded the reports.
+
+```{r download}
+    
+        # destfile = paste0(data_dir,
+        #                   "file",
+        #                   1:length(pdf.url)   # or 1:1026 for what I have now
+        #                   ".pdf")
+        # mapply(FUN = download.file, 
+        #        url = pdf.url,
+        #        destfile = destfile)
+```
+
+
+## Data read-in:
+```{r}
+file_names <- list.files(data_dir, pattern="file\\d+\\.pdf")
+file_paths <- paste0(data_dir, "/", file_names)
+```
+
+
+I read in data with the `pdf_text()` function.
+Each report is about 2 pages and
+I decided to collapse each report into one page.
+
+If I were to read in and `cat()` one report, it would look like this:
+```{r include = T, eval = F}
+pdf_text(file_paths[1]) %>%
+    paste(collapse = "NEWPAGE")  %>%   # collapse multiple pages
+    cat()
+```
+
+To read in all reports then, it would look like:
+```{r read, cache = T}
+report_texts <- file_paths %>%
+    sapply(FUN = function(x){pdf_text(x) %>%
+            paste(collapse = "NEWPAGE")})
+```
+
+And to find the dates that the reports were created can come from
+`pdf_info(file_paths)$created %>% as.Date`:
+```{r dates, cache = T}
+report_dates <- file_paths %>%
+    lapply(FUN = function(x){       # can't sapply... more info below *
+        pdf_info(x)$created %>%     # time stamp created
+            as.Date()     # I only care about the day
+        }) %>%
+    do.call(c, args = .)  # unlist() has no method for Date objects
+                          # * for more info visit
+    # http://r.789695.n4.nabble.com/unlist-list-of-dates-td4186744.html
+```
+
+<!-- What dates don't we have? -->
+```{r include = F, eval = F, echo = F}
+date_range <- range(report_dates)
+date_range
+calendar <- seq(date_range[1], date_range[2], by = 1)
+missing_dates <- setdiff(calendar, report_dates) %>% 
+    as.Date(origin = "1970-01-01")
+missing_dates
+```
+
+
+# Process
+## Tokenize and filter sentences
+If you look at the reports, you'll notice a pattern. From my flawed
+observations, it looks like this pattern gets more consistent for later
+reports. The reports give the number of strikes in a country with
+sentences that look like:
+"In [country], coalition military forces conducted [number] strike(s)...
+...in [country], coalition military forces conducted [number] strike(s)..."
+So I will tokenize the sentences of the reports and focus on those
+sentences that fit that pattern.
+
+```{r, cache = T}
+common_pattern = 
+    "in\\s\\w+?,\\scoalition\\smilitary\\sforces\\sconducted\\s.+?\\sstrike"
+    
+airstrikes <-
+    list(
+        report_date = report_dates,
+        report_text = report_texts 
+        ) %>%   
+    as_tibble() %>%
+    unnest_tokens(output = "sentence", input = "report_text", 
+                  token = "sentences",
+                  drop = F    # maybe I'll want the whole report_text?
+                ) %>%
+    filter( 
+        grepl(x = sentence, pattern = common_pattern)
+        ) 
+```
+
+## Extract country and numbers of strikes
+I'll use a combination of the `str_extract()` function from the stringr 
+package and `sub()` to extract the country and number of strikes
+mentioned in each sentence:
+```{r, cache = T}
+airstrikes <-
+    airstrikes %>%
+    mutate(
+        country = sentence %>%
+            str_extract(pattern = "in\\s\\w+?,") %>%
+            gsub(pattern = "(in\\s)|(,)",
+                 replacement = "",
+                 x = .), 
+        strikes = sentence %>%
+            sub(pattern = ".+military\\sforces\\sconducted\\s",
+                replacement = "",
+                x = .) %>%
+            sub(pattern = "\\sstrike.*",
+                replacement = "",
+                x = .)
+    ) %>% 
+    arrange(report_date %>% desc)
+```
+
+Now, if the number of airstrikes in a country was less than ten, that 
+number was spelled out. I'll replace those spelled out numbers
+with their digits.
+```{r cache = T}
+numbers = c("one" = "1", "two"="2", "three"="3", "four"="4", "five"="5",
+            "six"="6", "seven"="7", "eight"="8", "nine"="9", "ten"="10")
+
+airstrikes <-    
+    airstrikes %>% 
+    mutate(
+        strikes = strikes %>%
+            str_replace_all(pattern = numbers) %>%
+            as.numeric()
+    )
+```
+
+## Underestimate for simplicity
+Most strike reports cover the happenings of only one day. Occasionally a 
+report will be published that covers more than one day. In those
+reports will be multiple sentences about a single country. 
+For example, the following sentences come from a report created on 
+2017-11-13:
+```{r}
+airstrikes %>% subset(report_date == "2017-11-13", select = sentence)
+```
+
+How many sentences about a strikes in each country did I match from 
+each report? That can be seen by making a table:
+```{r echo = T, include = T}
+tail(table(airstrikes[c("report_date", "country")]))
+```
+
+How often did I match more than one sentence about a country in a report? This 
+can be seen by making a table of a table:
+```{r}
+table(table(airstrikes[c("report_date", "country")]))
+```
+
+I could look into this more, but for my sake here, I will not bother handling
+the situtations where a report describes more than one day (you see this
+happens less than 1% of the time). I am happy with underestimation for now. 
+So, to handle this, I will take the maximimum of the number of strikes in a
+country reported on a certain date. Remember, that my "date" is coming from 
+when the report was created. I am slightly underestimating the strikes, and 
+I am estimating the date of the strikes 5(usually off by one day, I'm guessing).
+
+I will take the maximum strikes for each country on each `report_date` by 
+grouping my data table by `report_date` and `country` and taking the maximum
+of `strikes`.
+
+```{r cache = T}
+understrikes <-
+    airstrikes %>%
+    group_by(report_date, country) %>%
+    summarize(
+       strikes = max(strikes)
+    )
+```
+
+<!--# Summarise
+
+What dates do I have?
+```{r include = F, eval = F, echo = F}
+summary(understrikes)
+```
+
+The date range goes from 2015-10-02 to 2017-11-13. 
+```{r include = F, eval = F, echo = F}
+date_range_p <- range(understrikes$report_date)
+date_range
+date_range_p
+calendar_p <- seq(date_range_p[1], date_range_p[2], by = 1)
+missing_dates_p <- setdiff(calendar_p, understrikes$report_date) %>% 
+    as.Date(origin = "1970-01-01")
+missing_dates
+missing_dates_p 
+```
+-->
+# Visualize
+When we look at the strikes over time, we get a pretty fuzzy graph.
+```{r}
+ggplot(understrikes, mapping=aes(x=report_date, y=strikes)) + 
+    geom_bar(mapping=aes(fill=country), stat = "identity")
+```
+
+This is why I'd like to look at the cummulative number of strikes in 
+each country over time.
+```{r}
+understrikes <- 
+    understrikes %>%
+    group_by(country) %>%
+    mutate(
+        cummulative_strikes = 
+            cumsum(strikes)
+    )
+ggplot(understrikes, mapping=aes(x=report_date, y=cummulative_strikes)) + 
+    geom_area(mapping=aes(fill=country))
+```
+
+```{r}
+plot_to_save <- 
+    ggplot(understrikes, mapping=aes(x=report_date, y=cummulative_strikes)) + 
+    geom_area(mapping=aes(fill=country)) +
+    labs(x="Date", y="Cummulative Airstrikes") +
+    ggtitle("US Airstrikes against ISIS")
+save(plot_to_save,file = "graphs/cum_strikes.rData")
+```
+
