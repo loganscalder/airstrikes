@@ -277,6 +277,8 @@ ggplot(understrikes, mapping=aes(x=report_date, y=cummulative_strikes)) +
     geom_area(mapping=aes(fill=country))
 ```
 
+
+<!--
 ```{r}
 plot_to_save <- 
     ggplot(understrikes, mapping=aes(x=report_date, y=cummulative_strikes)) + 
@@ -285,4 +287,4 @@ plot_to_save <-
     ggtitle("US Airstrikes against ISIS")
 save(plot_to_save,file = "graphs/cum_strikes.rData")
 ```
-
+-->
