@@ -17,23 +17,43 @@ load("data_processed/strike_reports.RData")
 ```
 
 ```{r}
-words_counted <- strike_reports %>%
+words_ranked <- strike_reports[1:5,] %>%
     unnest_tokens(output = "word", input = "report_text") %>%
-    mutate(
-        year = year(report_created_date),
-        month = month(report_created_date),
-        word = word
-    ) %>%
+    anti_join(stop_words) %>%
     group_by(
-        month, year, word
+        word
     ) %>% 
     summarize(
         frequency = length(word)
+    ) %>%
+    arrange(desc(frequency)) %>%
+    mutate(
+        word = factor(word, levels = word)
     )
 ```
 
 ```{r}
- ggplot(words, mapping = aes(x = word)) + geom_bar() + facet_grid(year~month)
-ggplot(words_counted, mapping = aes(x = word, y = frequency)) + geom_col()
+words_ <-
+    strike_reports[1:5,] %>%
+    unnest_tokens(output = "word", input = "report_text") %>%
+    anti_join(stop_words) %>%
+    transmute(
+        year = year(report_created_date),
+        month = month(report_created_date),
+        word = factor(word, levels = words_ranked$word)
+    ) %>%
+    group_by(
+        year, month, word
+    ) %>%
+    summarize(
+        frequency = length(word)
+    )
+View(words_)
+```
+
+```{r}
+ggplot(words_ranked, mapping = aes(x = word, y = frequency)) + geom_col()
+
+ggplot(words_, mapping = aes(x = word, y = frequency)) + geom_col() + facet_grid(year~month)
 ```
 
