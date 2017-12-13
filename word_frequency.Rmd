@@ -2,7 +2,7 @@
 title: "Word Frequency"
 author: "Logan Calder"
 date: "12/12/2017"
-output: html_document
+output: pdf_document
 ---
 
 
@@ -17,7 +17,13 @@ load("data_processed/strike_reports.RData")
 ```
 
 ```{r}
-words_ranked <- strike_reports[1:5,] %>%
+dim(strike_reports)
+n_reports = 1062
+top_n_words = 15
+```
+
+```{r}
+words_ranked <- (strike_reports[1:n_reports,] %>%
     unnest_tokens(output = "word", input = "report_text") %>%
     anti_join(stop_words) %>%
     group_by(
@@ -28,32 +34,35 @@ words_ranked <- strike_reports[1:5,] %>%
     ) %>%
     arrange(desc(frequency)) %>%
     mutate(
-        word = factor(word, levels = word)
-    )
+        word = factor(word, levels = word[1:top_n_words])
+    ))[1:top_n_words,]
 ```
 
 ```{r}
 words_ <-
-    strike_reports[1:5,] %>%
+    strike_reports[1:n_reports,] %>%
     unnest_tokens(output = "word", input = "report_text") %>%
     anti_join(stop_words) %>%
     transmute(
         year = year(report_created_date),
-        month = month(report_created_date),
-        word = factor(word, levels = words_ranked$word)
+        quarter = quarter(report_created_date),
+        word = factor(word, words_ranked$word)
     ) %>%
+    filter(!is.na(word)) %>%
     group_by(
-        year, month, word
+        year, quarter, word
     ) %>%
     summarize(
         frequency = length(word)
-    )
-View(words_)
+    ) 
+
 ```
 
 ```{r}
-ggplot(words_ranked, mapping = aes(x = word, y = frequency)) + geom_col()
+ggplot(words_ranked, mapping = aes(x = word, y = frequency)) + geom_col() +
+    theme(axis.text.x = element_text(angle = -90))
 
-ggplot(words_, mapping = aes(x = word, y = frequency)) + geom_col() + facet_grid(year~month)
+ggplot(words_, mapping = aes(x = word, y = frequency)) + geom_col() + facet_grid(year~quarter) +
+    theme(axis.text.x = element_text(angle = -90))
 ```
 
